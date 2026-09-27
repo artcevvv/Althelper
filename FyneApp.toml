@@ -1,7 +1,7 @@
 Website = "https://github.com/artcevvv/Althelper"
 
 [Details]
-Icon = "assets/althelper.svg"
+Icon = "assets/althelper.png"
 Name = "AltHelper"
 ID = "com.artcevvv.althelper"
 Version = "1.0.0"
