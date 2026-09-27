@@ -6,20 +6,25 @@ on:
       - main
     tags:
       - 'v*'
+      - '[0-9]+.*'
+  release:
+    types:
+      - published
   pull_request:
     branches:
       - main
   workflow_dispatch:
     inputs:
       create_release:
-        description: 'Create GitHub Release from main'
+        description: 'Create or update GitHub Release'
         required: false
         type: boolean
-        default: false
+        default: true
       tag_name:
         description: 'Release tag name (e.g. v1.0.0)'
-        required: false
+        required: true
         type: string
+        default: 'v1.0.0'
 
 jobs:
   build:
@@ -108,11 +113,11 @@ jobs:
             dist/AltHelper-x86_64.AppImage
             dist/checksums.txt
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.create_release)
+      - name: Upload Release Assets
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.create_release && inputs.tag_name != '')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag_name || github.ref_name }}
+          tag_name: ${{ github.event.release.tag_name || inputs.tag_name || github.ref_name }}
           files: |
             dist/althelper-linux-amd64
             dist/althelper-linux-amd64.tar.gz

@@ -1,4 +1,6 @@
 AltServerData
+dist/
+althelper
 # Security credentials
 *.p12
 *.pfx
