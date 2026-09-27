@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=AltHelper
+Comment=iOS Sideload Assistant for Linux
+Exec=althelper
+Icon=althelper
+Terminal=false
+Categories=Utility;Development;
+StartupNotify=true

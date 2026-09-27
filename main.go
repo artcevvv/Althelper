@@ -133,8 +133,9 @@ func (s *state) get() (bin, ipa string) {
 }
 
 type appProfile struct {
-	AppleID  string `json:"apple_id"`
-	Password string `json:"password,omitempty"`
+	AppleID      string `json:"apple_id"`
+	Password     string `json:"password,omitempty"`
+	AltServerBin string `json:"altserver_bin,omitempty"`
 }
 
 func loadProfile(path string) (*appProfile, error) {
@@ -167,6 +168,7 @@ func main() {
 	dataDir := filepath.Join(home, ".local", "share", "althelper")
 	_ = os.MkdirAll(dataDir, 0o755)
 	profilePath := filepath.Join(dataDir, "profile.json")
+	savedProfile, _ := loadProfile(profilePath)
 
 	lv := newLogView()
 
@@ -328,6 +330,14 @@ func main() {
 			}
 			st.setBinPath(dest)
 			setBinLabel(dest)
+
+			prof, _ := loadProfile(profilePath)
+			if prof == nil {
+				prof = &appProfile{}
+			}
+			prof.AltServerBin = dest
+			_ = saveProfile(profilePath, prof)
+
 			lv.Append("AltServer ready at: " + dest)
 		}()
 	}
@@ -346,17 +356,35 @@ func main() {
 			_ = os.Chmod(path, 0o755)
 			st.setBinPath(path)
 			setBinLabel(path)
+
+			prof, _ := loadProfile(profilePath)
+			if prof == nil {
+				prof = &appProfile{}
+			}
+			prof.AltServerBin = path
+			_ = saveProfile(profilePath, prof)
+
 			lv.Append("Selected binary: " + path)
 		}, w)
 		fd.Show()
 	}
 
-	if hint, err := archAssetHint(); err == nil {
-		candidate := filepath.Join(dataDir, "AltServer-"+hint)
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			st.setBinPath(candidate)
-			setBinLabel(candidate)
-			lv.Append("Found existing AltServer binary: " + candidate)
+	if savedProfile != nil && savedProfile.AltServerBin != "" {
+		if info, err := os.Stat(savedProfile.AltServerBin); err == nil && !info.IsDir() {
+			st.setBinPath(savedProfile.AltServerBin)
+			setBinLabel(savedProfile.AltServerBin)
+			lv.Append("Loaded AltServer binary from config: " + savedProfile.AltServerBin)
+		}
+	}
+
+	if bin, _ := st.get(); bin == "" {
+		if hint, err := archAssetHint(); err == nil {
+			candidate := filepath.Join(dataDir, "AltServer-"+hint)
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				st.setBinPath(candidate)
+				setBinLabel(candidate)
+				lv.Append("Found existing AltServer binary: " + candidate)
+			}
 		}
 	}
 
@@ -425,15 +453,15 @@ func main() {
 
 	rememberProfileCheck := widget.NewCheck("Remember Apple ID profile in local config", nil)
 
-	if prof, err := loadProfile(profilePath); err == nil && prof != nil {
-		if prof.AppleID != "" {
-			appleIDEntry.SetText(prof.AppleID)
+	if savedProfile != nil {
+		if savedProfile.AppleID != "" {
+			appleIDEntry.SetText(savedProfile.AppleID)
+			rememberProfileCheck.SetChecked(true)
+			lv.Append("Loaded saved Apple ID profile: " + savedProfile.AppleID)
 		}
-		if prof.Password != "" {
-			passwordEntry.SetText(prof.Password)
+		if savedProfile.Password != "" {
+			passwordEntry.SetText(savedProfile.Password)
 		}
-		rememberProfileCheck.SetChecked(true)
-		lv.Append("Loaded saved Apple ID profile: " + prof.AppleID)
 	}
 
 	ipaLabel := widget.NewLabel("No .ipa file selected")
@@ -551,12 +579,16 @@ func main() {
 		}
 
 		executeInstall := func() {
-			if rememberProfileCheck.Checked {
-				_ = saveProfile(profilePath, &appProfile{
-					AppleID:  appleID,
-					Password: password,
-				})
+			prof, _ := loadProfile(profilePath)
+			if prof == nil {
+				prof = &appProfile{}
 			}
+			prof.AltServerBin = bin
+			if rememberProfileCheck.Checked {
+				prof.AppleID = appleID
+				prof.Password = password
+			}
+			_ = saveProfile(profilePath, prof)
 
 			go func() {
 				installBusy.Show()
@@ -599,14 +631,18 @@ func main() {
 				"Save Apple ID Profile?",
 				"Would you like to save this Apple ID profile to local config for future sessions?",
 				func(save bool) {
+					prof, _ := loadProfile(profilePath)
+					if prof == nil {
+						prof = &appProfile{}
+					}
+					prof.AltServerBin = bin
 					if save {
 						rememberProfileCheck.SetChecked(true)
-						_ = saveProfile(profilePath, &appProfile{
-							AppleID:  appleID,
-							Password: password,
-						})
+						prof.AppleID = appleID
+						prof.Password = password
 						lv.Append("Saved Apple ID profile to " + profilePath)
 					}
+					_ = saveProfile(profilePath, prof)
 					executeInstall()
 				},
 				w,

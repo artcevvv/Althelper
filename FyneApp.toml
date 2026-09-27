@@ -1,0 +1,8 @@
+Website = "https://github.com/artcevvv/Althelper"
+
+[Details]
+Icon = "assets/althelper.svg"
+Name = "AltHelper"
+ID = "com.artcevvv.althelper"
+Version = "1.0.0"
+Build = 1
