@@ -32,7 +32,7 @@ func newLogView() *logView {
 	e := widget.NewMultiLineEntry()
 	e.Wrapping = fyne.TextWrapBreak
 	e.TextStyle = fyne.TextStyle{Monospace: true}
-	e.SetPlaceHolder("Log output and live command results will appear here...")
+	e.SetPlaceHolder("Output will appear here...")
 	s := container.NewVScroll(e)
 
 	l := &logView{
@@ -161,7 +161,6 @@ func saveProfile(path string, p *appProfile) error {
 func main() {
 	a := app.NewWithID("com.artcevvv.althelper")
 	w := a.NewWindow("AltHelper — iOS Sideload Assistant")
-	w.Resize(fyne.NewSize(1020, 720))
 
 	st := &state{}
 	home, _ := os.UserHomeDir()
@@ -174,7 +173,9 @@ func main() {
 
 	// 1. Anisette Server
 	anisetteContainerStatus := widget.NewLabel("Container: checking...")
+	anisetteContainerStatus.Wrapping = fyne.TextWrapBreak
 	anisetteHealthStatus := widget.NewLabel("Health: checking...")
+	anisetteHealthStatus.Wrapping = fyne.TextWrapBreak
 	anisetteBusy := widget.NewProgressBarInfinite()
 	anisetteBusy.Hide()
 
@@ -208,9 +209,10 @@ func main() {
 	}
 	refreshAnisetteStatus()
 
-	startAnisetteBtn := widget.NewButtonWithIcon("Start Anisette", theme.MediaPlayIcon(), nil)
+	startAnisetteBtn := widget.NewButtonWithIcon("Start", theme.MediaPlayIcon(), nil)
 	stopAnisetteBtn := widget.NewButtonWithIcon("Stop", theme.MediaStopIcon(), nil)
 	checkHealthBtn := widget.NewButtonWithIcon("Check Health", theme.ViewRefreshIcon(), nil)
+	anisetteBtns := container.NewGridWithColumns(3, startAnisetteBtn, stopAnisetteBtn, checkHealthBtn)
 
 	startAnisetteBtn.OnTapped = func() {
 		go func() {
@@ -272,8 +274,9 @@ func main() {
 
 	anisetteCard := widget.NewCard("1. Anisette Server", "Authentication header service (:6969)",
 		container.NewVBox(
-			container.NewVBox(anisetteContainerStatus, anisetteHealthStatus),
-			container.NewHBox(startAnisetteBtn, stopAnisetteBtn, checkHealthBtn),
+			anisetteContainerStatus,
+			anisetteHealthStatus,
+			anisetteBtns,
 			anisetteBusy,
 		),
 	)
@@ -284,6 +287,7 @@ func main() {
 	repoEntry.SetPlaceHolder("GitHub owner/repo")
 
 	binPathLabel := widget.NewLabel("AltServer binary: not set")
+	binPathLabel.Wrapping = fyne.TextWrapBreak
 	setBinLabel := func(p string) {
 		if p == "" {
 			binPathLabel.SetText("AltServer binary: not set")
@@ -295,8 +299,9 @@ func main() {
 	downloadBinBusy := widget.NewProgressBarInfinite()
 	downloadBinBusy.Hide()
 
-	downloadBtn := widget.NewButtonWithIcon("Download Patched AltServer", theme.DownloadIcon(), nil)
-	browseBinBtn := widget.NewButtonWithIcon("Browse Local Binary...", theme.FolderOpenIcon(), nil)
+	downloadBtn := widget.NewButtonWithIcon("Download Binary", theme.DownloadIcon(), nil)
+	browseBinBtn := widget.NewButtonWithIcon("Browse Binary...", theme.FolderOpenIcon(), nil)
+	binBtns := container.NewGridWithColumns(2, downloadBtn, browseBinBtn)
 
 	downloadBtn.OnTapped = func() {
 		go func() {
@@ -392,7 +397,7 @@ func main() {
 		container.NewVBox(
 			widget.NewLabel("GitHub repository fork:"),
 			repoEntry,
-			container.NewHBox(downloadBtn, browseBinBtn),
+			binBtns,
 			binPathLabel,
 			downloadBinBusy,
 		),
@@ -465,6 +470,7 @@ func main() {
 	}
 
 	ipaLabel := widget.NewLabel("No .ipa file selected")
+	ipaLabel.Wrapping = fyne.TextWrapBreak
 	pickIPABtn := widget.NewButtonWithIcon("Choose .ipa File...", theme.FolderOpenIcon(), nil)
 	pickIPABtn.OnTapped = func() {
 		fd := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
@@ -494,7 +500,8 @@ func main() {
 		container.NewVBox(
 			credForm,
 			rememberProfileCheck,
-			container.NewHBox(pickIPABtn, ipaLabel),
+			pickIPABtn,
+			ipaLabel,
 		),
 	)
 
@@ -668,7 +675,7 @@ func main() {
 		credCard,
 		installCard,
 	)
-	controlsScroll := container.NewVScroll(controls)
+	controlsScroll := container.NewVScroll(container.NewPadded(controls))
 
 	logHeader := container.NewBorder(
 		nil, nil,
@@ -680,8 +687,9 @@ func main() {
 	logPanel := container.NewBorder(logHeader, nil, nil, nil, lv.CanvasObject())
 
 	split := container.NewHSplit(controlsScroll, logPanel)
-	split.Offset = 0.52
+	split.SetOffset(0.5)
 
 	w.SetContent(split)
+	w.Resize(fyne.NewSize(1040, 720))
 	w.ShowAndRun()
 }

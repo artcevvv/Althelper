@@ -1,126 +1,231 @@
-# AltHelper
+# AltHelper — iOS Sideload Assistant for Linux
 
-A small Linux GUI that wraps the fiddly parts of sideloading an iOS app via
-AltServer + your Apple ID
+[![CI & Release](https://github.com/artcevvv/Althelper/actions/workflows/release.yml/badge.svg)](https://github.com/artcevvv/Althelper/actions/workflows/release.yml)
+[![GitHub release](https://img.shields.io/github/v/release/artcevvv/Althelper?include_prereleases)](https://github.com/artcevvv/Althelper/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-1. Starts (or checks) an **anisette-v3-server** Docker container on port
-   `6969`, needed for Apple ID sign-in.
-2. Downloads (or lets you point at) a **patched AltServer-Linux** binary —
-   the stock `NyaMisty/AltServer-Linux` release is unmaintained and breaks
-   on current iOS due to two separate bugs: Apple blocking the hardcoded
-   `com.apple.dt.Xcode` client identifier during sign-in (since Sept 2026),
-   and old `ldid` signing that crashes apps on launch on iOS 26.4+. The
-   default repo pointed to here (`jaakkopalvaila/AltServer-Linux`, `ng`
-   branch) fixes both.
-3. Lists devices over USB (via `idevice_id`), and installs your `.ipa` with
-   the right environment variables set for you automatically.
+**AltHelper** is a native Linux desktop application that streamlines and automates sideloading `.ipa` packages onto iOS devices (iPhone and iPad) using your Apple ID and patched AltServer binaries.
 
-It does **not** try to reimplement AltServer/AltSign itself — it just
-automates running the existing tools correctly, since almost every install
-failure in this ecosystem comes from a missing env var, a stale binary, or
-a wrong daemon running, not from anything genuinely broken beyond that.
+Instead of wrestling with manual Docker commands, missing environment variables, detached 2FA terminal prompts, or fragmented forks, AltHelper wraps the entire workflow into a responsive, dual-pane GUI with integrated health checking and live console output.
+
+---
+
+## Table of Contents
+
+- [Purpose](#purpose)
+- [How It Works](#how-it-works)
+- [Features](#features)
+- [Privacy & Security](#privacy--security)
+- [Prerequisites](#prerequisites)
+- [Installation & Getting Started](#installation--getting-started)
+  - [Option A: AppImage (Recommended)](#option-a-appimage-recommended)
+  - [Option B: Building from Source](#option-b-building-from-source)
+- [Step-by-Step Usage Guide](#step-by-step-usage-guide)
+- [Troubleshooting & Caveats](#troubleshooting--caveats)
+- [License](#license)
+
+---
+
+## Purpose
+
+Sideloading iOS applications on Linux via `AltServer-Linux` is powerful, but often fragile and tedious:
+- Apple requires cryptographic **Anisette machine data** for authentication, which necessitates running an emulated provisioning service.
+- The original `NyaMisty/AltServer-Linux` repository is unmaintained, requiring patched community forks (such as `jaakkopalvaila/AltServer-Linux`) that fix Apple sign-in blocks and modern iOS code-signing crashes.
+- Apple IDs with **Two-Factor Authentication (2FA)** require interactive terminal input that breaks headless or naive background process managers.
+- USB device detection requires coordinated communication through `usbmuxd`.
+
+**AltHelper** automates and unifies these moving pieces into an intuitive interface, keeping you in full control without needing to manually run complex terminal sequences every week.
+
+---
+
+## How It Works
+
+AltHelper acts as a coordinator between your local system services, container runtime, and device bridge:
+
+```
+┌────────────────────────────────────────────────────────┐
+│                   AltHelper (GUI)                      │
+│                                                        │
+│  [1. Anisette]   [2. AltServer]   [3. Device & App]    │
+│        │                │                 │            │
+└────────┼────────────────┼─────────────────┼────────────┘
+         │                │                 │
+         ▼                ▼                 ▼
+ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+ │ Docker Engine │ │ AltServer-    │ │   usbmuxd /   │
+ │ (anisette-v3) │ │ Linux Binary  │ │  idevice_id   │
+ └───────┬───────┘ └───────┬───────┘ └───────┬───────┘
+         │                 │                 │
+         │ :6969 HTTP      │ Signing Data    │ USB / Lightning
+         └────────────────►│◄────────────────┘
+                           │
+                           ▼
+                  ┌─────────────────┐
+                  │   iOS Device    │
+                  │ (Installed App) │
+                  └─────────────────┘
+```
+
+1. **Anisette Provisioning**: Manages a local Docker container (`dadoum/anisette-v3-server`) bound to `127.0.0.1:6969` with persistent machine data (`anisette-v3_data` volume) so authentication tokens persist across runs.
+2. **AltServer Execution**: Sets required environment variables (`ALTSERVER_ANISETTE_SERVER=http://127.0.0.1:6969`), passes target UDID, credentials, and payload, and pipes live status output to the GUI.
+3. **Interactive 2FA Handling**: Watches process standard output for Apple verification challenges, displays a native modal dialog, and streams the user-entered code directly to AltServer's standard input.
+
+---
+
+## Features
+
+- **Docker Anisette Management**:
+  - 1-click container start, stop, and status monitoring.
+  - Active HTTP healthchecks (`GET http://127.0.0.1:6969/`) verifying readiness before initiating installations.
+  - Automatic detection and remediation of unmapped host ports.
+- **AltServer Binary Management**:
+  - Automatic CPU architecture detection (`x86_64`, `aarch64`, `armv7l`).
+  - Automatic 1-click download of the latest patched fork releases directly from GitHub.
+  - Local binary file picker with automatic permission enforcement (`chmod +x`).
+  - Persistent binary path saving across sessions.
+- **Device Connectivity**:
+  - Live USB device scanning via `idevice_id`.
+  - Optional Wi-Fi mode support (configurable endpoint for `netmuxd`).
+- **Seamless 2FA Support**:
+  - Interactive two-factor authentication dialog that pauses the background runner and feeds codes to AltServer on demand.
+- **Config & Credential Persistence**:
+  - Optional, opt-in profile saving to local config (`~/.local/share/althelper/profile.json`) with strict Unix file permissions (`0600`).
+- **Lag-Free Terminal Activity Log**:
+  - Asynchronous, batched log streaming (capped at 16 FPS) that prevents interface freezing during verbose signing operations.
+  - Monospace formatting and a dedicated "Clear Log" control.
+
+---
+
+## Privacy & Security
+
+Your privacy and account security are fundamental design priorities:
+
+- **No Third-Party Telemetry**: AltHelper does not include tracking, telemetry, or remote analytics of any kind.
+- **Direct Communication Only**:
+  - Connections to `api.github.com` and GitHub release CDNs occur only when checking or downloading AltServer binaries.
+  - Connections to Docker Hub occur only via your local Docker daemon when pulling `dadoum/anisette-v3-server`.
+  - Authentication traffic is handled strictly by the local AltServer binary communicating directly with Apple servers.
+- **Local Credential Storage**:
+  - Storing your Apple ID and password is **completely optional**.
+  - If enabled, credentials are saved solely on your local filesystem under `~/.local/share/althelper/profile.json`.
+  - The configuration file is written with strict file permissions (`0600`), ensuring only your local user account can read it.
+- **Password Masking**: Passwords are masked within the GUI and sanitized from the application console log.
+
+> [!NOTE]
+> For enhanced security, using an **App-Specific Password** or a dedicated Apple ID for sideloading is recommended.
+
+---
 
 ## Prerequisites
 
-Install these first (Debian/Ubuntu example — adjust for your distro):
+Before running AltHelper, ensure standard iOS communication utilities and Docker are installed on your Linux distribution:
 
+### Debian / Ubuntu / Pop!_OS / Linux Mint
+```bash
+sudo apt-get update
+sudo apt-get install -y docker.io usbmuxd libimobiledevice6 libimobiledevice-utils
 ```
-sudo apt-get install docker.io usbmuxd libimobiledevice6 libimobiledevice-utils
+
+### Arch Linux / Manjaro
+```bash
+sudo pacman -S docker usbmuxd libimobiledevice
 ```
 
-- **Docker**: runs the anisette server. Make sure your user can run
-  `docker` without `sudo` (add yourself to the `docker` group and
-  re-login), or run the whole GUI app with `sudo`.
-- **usbmuxd**: should already be running as a system service
-  (`systemctl status usbmuxd`) for USB installs. You do **not** need
-  netmuxd for a plain USB install — only for Wi-Fi installs, and that's a
-  separate manual setup this tool doesn't automate (see "Wi-Fi mode"
-  below).
-- **libimobiledevice-utils**: provides `idevice_id`, used to list
-  connected devices.
-- **Go 1.21+** and the Fyne build dependencies, only needed to *build* the
-  app (see below):
-
-  ```
-  sudo apt-get install golang gcc libgl1-mesa-dev xorg-dev
-  ```
-
-## Building
-
+### Fedora
+```bash
+sudo dnf install -y docker usbmuxd libimobiledevice libimobiledevice-utils
 ```
-git clone <this project>   # or just unzip it
-cd althelper
-go mod tidy      # fetches Fyne and pins exact versions — needs internet
-go build -o althelper .
+
+### Post-Installation Setup
+1. **Enable and start usbmuxd**:
+   ```bash
+   sudo systemctl enable --now usbmuxd
+   ```
+2. **Enable Docker and add your user to the docker group**:
+   ```bash
+   sudo systemctl enable --now docker
+   sudo usermod -aG docker $USER
+   ```
+   *(Log out and log back in for group changes to take effect).*
+
+---
+
+## Installation & Getting Started
+
+### Option A: AppImage (Recommended)
+
+Pre-built AppImages are available on the [Releases](https://github.com/artcevvv/Althelper/releases) page:
+
+1. Download `AltHelper-x86_64.AppImage` from the latest release.
+2. Make it executable:
+   ```bash
+   chmod +x AltHelper-x86_64.AppImage
+   ```
+3. Run it:
+   ```bash
+   ./AltHelper-x86_64.AppImage
+   ```
+
+### Option B: Building from Source
+
+#### Build Dependencies (Ubuntu/Debian)
+```bash
+sudo apt-get install -y golang gcc libgl1-mesa-dev xorg-dev
+```
+
+#### Compilation
+```bash
+git clone https://github.com/artcevvv/Althelper.git
+cd Althelper
+go mod tidy
+go build -ldflags="-s -w" -o althelper .
 ./althelper
 ```
 
-`go mod tidy` needs to reach `proxy.golang.org`; if your network blocks
-that, set `GOPROXY=direct` first, or run it somewhere with normal internet
-access and just copy the resulting binary over.
+---
 
-## Using it
+## Step-by-Step Usage Guide
 
-The window is laid out in the order you'd actually do this by hand:
+AltHelper is organized sequentially into five straightforward steps:
 
-1. **Anisette server** — click "Start anisette (Docker)". This runs
-   `dadoum/anisette-v3-server` in a container named `althelper-anisette`
-   and waits until port 6969 answers. If Docker isn't installed or you
-   don't have permission to run it, you'll get an error in the log at the
-   bottom instead of a silent hang.
-2. **AltServer-Linux binary** — click "Download patched AltServer". It
-   looks up the latest GitHub release of the repo in the text box above
-   it (defaults to `jaakkopalvaila/AltServer-Linux`) and grabs the asset
-   matching your CPU architecture. **This fork situation is fluid** —
-   forks of forks are common in this space and repos disappear or get
-   renamed. If the download fails, check that repo's Releases page in a
-   browser, grab the right binary by hand, and use "Browse for existing
-   binary..." instead. Either way you end up with a path shown under
-   "AltServer binary:".
-3. **Device** — plug your iPhone in over USB, unlock it, tap **Trust**
-   if prompted, then click "Refresh devices". If nothing shows up, run
-   `idevice_id -l` yourself in a terminal first — if that's empty too,
-   this app can't help you until that's fixed (re-pairing, unlocking the
-   phone, etc.).
-4. **Apple ID & app** — enter your Apple ID email/password (if you have
-   two-factor on, some setups expect an app-specific password — try your
-   normal one first, since patched AltSign generally handles the 2FA
-   prompt itself) and pick the `.ipa` file.
-5. Click **Install to device** and watch the log pane. It streams
-   AltServer's own debug output (`-d -d`) directly, so if something fails
-   you'll see AltServer's real error message, not just a generic alert.
+### 1. Anisette Server
+- Click **Start** to spawn the Docker container (`dadoum/anisette-v3-server`).
+- AltHelper will check port forwarding on `:6969` and run an HTTP healthcheck to verify that machine provisioning is active.
 
-### Wi-Fi mode
+### 2. AltServer Binary
+- Click **Download Binary** to fetch the patched architecture-specific `AltServer-Linux` binary directly from GitHub.
+- Alternatively, click **Browse Binary...** to select an existing executable.
+- The path is automatically remembered for future sessions.
 
-The checkbox under Device exists for completeness, but this app doesn't
-set up `netmuxd` for you — that still needs to be running separately,
-listening at the address you enter (default `127.0.0.1:27015`), and your
-phone needs to have had Wi-Fi sync turned on at least once from a real
-Finder/iTunes session. If you're not sure why this exists, you almost
-certainly want USB mode (leave the box unchecked).
+### 3. Target Device
+- Connect your iPhone or iPad via USB cable.
+- Unlock the screen and tap **Trust This Computer** if prompted.
+- Click **Refresh Devices** to populate the device dropdown.
+- *(Optional)* Check **Install over Wi-Fi** if you have a running `netmuxd` instance.
 
-## Security notes
+### 4. Apple ID & App
+- Enter your Apple ID email and password.
+- Check **Remember Apple ID profile** if you want to store credentials in your local user config.
+- Click **Choose .ipa File...** to select the target iOS package.
 
-- Your Apple ID password is passed as a plain command-line argument to
-  the AltServer binary (that's just how AltServer's CLI works) and is
-  never written to disk or logged by this app. On a shared machine, be
-  aware that command-line arguments of other users' processes can
-  sometimes be visible via `/proc` or `ps`.
-- Nothing here phones home except: the GitHub API (to find the AltServer
-  release), the download URL for that release's binary, and Docker Hub
-  (to pull the anisette image) — plus AltServer's own connections to
-  Apple's servers, which it needs regardless of this GUI.
+### 5. Installation
+- Click **Install to Device**.
+- If two-factor authentication is active on your Apple ID, a modal dialog will prompt for the 6-digit verification code.
+- Follow progress in the **Live Activity Log** panel on the right.
 
-## Known limitations / honest caveats
+---
 
-- This is a thin wrapper, not a reimplementation — if AltServer-Linux
-  itself has a bug (or the fork it's pointed at goes stale again), this
-  tool will faithfully surface that same error in its log pane rather
-  than fixing it. Watch that fork's issues page if installs start failing
-  again after an Apple-side change.
-- The GitHub "download latest release" step assumes the target repo
-  actually publishes release binaries (not just CI artifacts, which
-  require GitHub auth to fetch). If that ever stops being true, use
-  "Browse for existing binary..." instead.
-- No Wi-Fi/netmuxd automation, no code-signing of your own — this only
-  drives the existing `AltServer-Linux -u -a -p file.ipa` invocation.
+## Troubleshooting & Caveats
+
+- **Device not showing up in dropdown**:
+  Run `idevice_id -l` in a terminal. If it returns blank, check physical cable connections, unlock your device, and verify `systemctl status usbmuxd`.
+- **Anisette port conflicts**:
+  If port `6969` is already in use by another service on your machine, terminate the conflicting process or container prior to clicking **Start**.
+- **Apple ID 2FA 401 errors**:
+  Ensure the 6-digit verification code is entered promptly when the modal appears. If using a secondary Apple ID, ensure account terms have been accepted by logging into [appleid.apple.com](https://appleid.apple.com) in a browser at least once.
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
