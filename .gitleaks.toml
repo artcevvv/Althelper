@@ -1,0 +1,7 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "blocked-certificate-extensions"
+description = "Detected sensitive certificate or keystore file"
+path = '''(?i)\.(p12|pfx|keystore|jks|der|crt|key|pem)$'''

@@ -1,0 +1,6 @@
+AltServerData
+# Security credentials
+*.p12
+*.pfx
+*.pem
+*.key
